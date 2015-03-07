@@ -19,6 +19,9 @@
                 <echo message="The value of property stage_user is not set" />
             </else>
         </if>
+        <if test="${stage_user==''}">
+            <echo message="The value of property stage_user is not set" />
+        </if>
         <if>
             <equals arg1="${stage_password}" arg2="" />
             <then>
