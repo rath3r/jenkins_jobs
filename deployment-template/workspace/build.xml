@@ -16,7 +16,7 @@
                 <echo message="The value of property stage_user is ${stage_user}" />
             </then>
             <else>
-                <echo message="The value of property stage_user is not set" />
+                <echo message="The value of property stage_user is not set????????" />
             </else>
         </if>
         <if test="${stage_user==''}">
