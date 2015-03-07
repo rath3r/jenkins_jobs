@@ -10,7 +10,7 @@
         <echo>Checking the job properties.</echo>
         <echo>Checking the job properties set in the build.xml.</echo>
         <if>
-            <equals arg1="${stage_user}" arg2="" />
+            <equals arg1="stage_user" arg2="" />
             <then>
                 <fail message="stage_user not assigned within the build.xml." />
             </then>
