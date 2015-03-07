@@ -1,1 +1,397 @@
-2nd
+<project name="deploy" default="property-check">
+
+    <target name="initialise" description="Check if all the properties are set up">
+        <echo>Start of property check target.</echo>
+        <tstamp>
+            <format property="STAMP" pattern="%Y%m%d%H%M%S" />
+        </tstamp>
+        <property name="timestamp" value="${STAMP}" />
+        <echo>Timestamp: ${timestamp}</echo>
+        <echo>Checking the job properties.</echo>
+        <echo>Checking the job properties set in the build.xml.</echo>
+        <if>
+            <equals arg1="${stage_user}" arg2="" />
+            <then>
+                <fail message="stage_user not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${stage_password}" arg2="" />
+            <then>
+                <fail message="stage_password not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${stage_host}" arg2="" />
+            <then>
+                <fail message="stage_host not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${live_user}" arg2="" />
+            <then>
+                <fail message="live_user not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${live_password}" arg2="" />
+            <then>
+                <fail message="live_password not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${live_host}" arg2="" />
+            <then>
+                <fail message="live_host not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${folder_name}" arg2="" />
+            <then>
+                <fail message="folder_name not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${repo_name}" arg2="" />
+            <then>
+                <fail message="repo_name not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${stage_branch}" arg2="" />
+            <then>
+                <fail message="stage_branch not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${live_branch}" arg2="" />
+            <then>
+                <fail message="live_branch not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${deploy_bin}" arg2="" />
+            <then>
+                <fail message="deploy_bin not assigned within the build.xml." />
+            </then>
+        </if>
+        <if>
+            <or>
+                <equals arg1="${db_deploy}" arg2="" />
+            </or>
+            <then>
+                <fail message="One or more properties defined in the jenkins config has not been set." />
+            </then>
+        </if>
+        <if>
+            <equals arg1="${stage_deploy_dir}" arg2="" />
+            <then>
+                <fail message="stage_deploy_dir not assigned within the build.xml." />
+            </then>
+        </if>
+
+        <echo>Success</echo>
+        <echo>Checking the database deploy properties.</echo>
+        <if>
+            <equals arg1="${db_deploy}" arg2="yes" />
+            <then>
+                <if>
+                    <or>
+                        <equals arg1="${stage_db}"  arg2="" />
+                        <equals arg1="${stage_db_user}"  arg2="" />
+                        <equals arg1="${stage_db_pass}"  arg2=""/>
+                        <equals arg1="${live_db}" arg2="" />
+                        <equals arg1="${live_db_user}" arg2="" />
+                        <equals arg1="${live_db_password}" arg2="" />
+                    </or>
+                    <then>
+                        <fail message="One or more of the database properties has not been set." />
+                    </then>
+                </if>
+            </then>
+        </if>
+        <echo>Success</echo>
+    </target>
+
+    <target name="db-live-to-stage" description="Move database from live to stage.">
+        <if>
+            <equals arg1="${db_live_to_stage}" arg2="yes" />
+            <then>
+                <echo>Checking if the releases backup location exists on the live server.</echo>
+                <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="~/bin/./check_exists.sh ~/releases_backup/${folder_name}" property="releases_backup_location_check" display="false" />
+                <if>
+                    <equals arg1="${releases_backup_location_check}" arg2="false" />
+                    <then>
+                        <echo>Creating the releases backup location on the live server.</echo>
+                        <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="mkdir ~/releases_backup/${folder_name}" />
+                    </then>
+                </if>
+                <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="mkdir ~/releases_backup/${folder_name}/${timestamp}" />
+                <echo>Dumping the database on live</echo>
+                <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="sudo /usr/bin/mysqldump --user=${live_db_user} --password=${live_db_password} --host=localhost ${live_db} > ~/releases_backup/${folder_name}/${timestamp}/${live_db}-live.sql" />
+                <echo>Compressing the MySQL dump.</echo>
+                <property name="archive_create_command" value="tar -czvf ~/releases_backup/${folder_name}/${timestamp}.tar.gz -C ~/releases_backup/${folder_name}/${timestamp} ." />
+                <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="${archive_create_command}" />
+                <echo>Checking if the releases backup location exists on the stage server.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="~/bin/./check_exists.sh /home/deploy/releases_backup/${folder_name}" property="releases_backup_location_check_stage" display="false" />
+                <if>
+                    <equals arg1="${releases_backup_location_check_stage}" arg2="false" />
+                    <then>
+                        <echo>Creating the releases backup location on the live server.</echo>
+                        <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="mkdir ~/releases_backup/${folder_name}" />
+                    </then>
+                </if>
+                <echo>Copying the file onto the stage server.</echo>
+                <property name="copy_command" value="sshpass -p '${stage_password}' scp ~/releases_backup/${folder_name}/${timestamp}.tar.gz ${stage_user}@${stage_host}:~/releases_backup/${folder_name}" />
+                <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="${copy_command}" />
+                <echo>Deleting the non-compressed backup.</echo>
+                <ssh username="${live_user}" password="${live_password}" host="${live_host}" command="rm -Rf ~/releases_backup/${folder_name}/${timestamp}" />
+                <echo>Making directory for extracted contents.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="mkdir ~/releases_backup/${folder_name}/${timestamp}" />
+                <echo>Extracting the contents of the archive on stage.</echo>
+                <property name="archive_extract_command" value="tar -xzvf ~/releases_backup/${folder_name}/${timestamp}.tar.gz -C ~/releases_backup/${folder_name}/${timestamp}" />
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="${archive_extract_command}" />
+                <echo>Deleting extracted archive.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="rm -Rf ~/releases_backup/${folder_name}/${timestamp}.tar.gz" />
+                <echo>Backing up existing database.</echo>
+                <property name="stage_mysqldump" value="sudo /usr/bin/mysqldump --user=${stage_db_user} --password=${stage_db_password} --host=localhost ${stage_db} > ~/releases_backup/${folder_name}/${timestamp}/${stage_db}-stage.sql" />
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="${stage_mysqldump}" />
+                <echo>Drop stage database.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="mysql --user=${stage_db_user} --password=${stage_db_password} --host=localhost -e 'drop database ${stage_db}'" />
+                <echo>Create stage database.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="mysql --user=${stage_db_user} --password=${stage_db_password} --host=localhost -e 'create database ${stage_db}'" />
+                <echo>Execute sql from live.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="mysql --user=${stage_db_user} --password=${stage_db_password} --host=localhost ${stage_db} -e 'source ~/releases_backup/${folder_name}/${timestamp}/${live_db}-live.sql'" />
+                <echo>Compressing the extracted MySQL dump.</echo>
+                <property name="archive_create_command_stage" value="tar -czvf ~/releases_backup/${folder_name}/${timestamp}.tar.gz -C ~/releases_backup/${folder_name}/${timestamp} ." />
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="${archive_create_command_stage}" />
+                <echo>Deleting the used Directory.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="rm -Rf ~/releases_backup/${folder_name}/${timestamp}" />
+                <echo>Finished.</echo>
+            </then>
+        </if>
+    </target>
+
+    <target name="deploy-frontend" description="Move database from live to stage.">
+        <echo>Check if the front end should be deployed.</echo>
+        <if>
+            <equals arg1="${fe_deploy}" arg2="yes" />
+            <then>
+                <echo>Removing and then copying the front end stage site.</echo>
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="rm -Rf ${deploy_dir}-fe/documents" />
+                <ssh username="${stage_user}" password="${stage_password}" host="${stage_host}" command="cp -R ${deploy_dir}/documents ${deploy_dir}-fe/" />
+            </then>
+        </if>
+    </target>
+
+    <target name="deploy-stage-setup" description="Stage deployment target">
+        <echo>Setting up the properties for the stage deployment.</echo>
+        <property name="deploy_user" value="${stage_user}" />
+        <property name="deploy_password" value="${stage_password}" />
+        <property name="deploy_host" value="${stage_host}" />
+        <property name="deploy_dir" value="${stage_deploy_dir}" />
+        <property name="deploy_branch" value="${stage_branch}" />
+
+        <property name="deploy_variables_setup" value="yes" />
+    </target>
+
+    <target name="deploy-live-setup" description="Deploy a site to live.">
+        <echo>Setting up the properties for the live deployment.</echo>
+        <property name="deploy_user" value="${live_user}" />
+        <property name="deploy_password" value="${live_password}" />
+        <property name="deploy_host" value="${live_host}" />
+        <property name="deploy_dir" value="${live_deploy_dir}" />
+        <property name="deploy_branch" value="${live_branch}" />
+
+        <property name="deploy_variables_setup" value="yes" />
+    </target>
+
+    <target name="deploy" description="Deployment target">
+        <property name="deploy_location_check" value="${deploy_bin}/./check_exists.sh ${deploy_dir}" />
+        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_location_check}" property="deploy_site_exists" display="false" />
+        <if>
+            <equals arg1="${deploy_site_exists}" arg2="true" />
+            <then>
+                <echo>The site is set up at ${deploy_dir}.</echo>
+                <echo>Checking if the releases backup location exists on the server.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ~/releases_backup/${deploy_dir}" property="releases_backup_location_check" display="false" />
+                <if>
+                    <equals arg1="${releases_backup_location_check}" arg2="false" />
+                    <then>
+                        <echo>Creating the releases backup location on the server.</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ~/releases_backup/${deploy_dir}" />
+                    </then>
+                </if>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ~/releases_backup/${deploy_dir}/${timestamp}" />
+
+                <echo>Check if the releases directory is present</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/releases" property="deploy_releases_dir" display="false" />
+                <if>
+                    <equals arg1="${deploy_releases_dir}" arg2="false" />
+                    <then>
+                        <echo>Cleaning current dir.</echo>
+                        <!-- Move httpdocs to backup releases/$timestamp -->
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mv ${deploy_dir} ~/releases_backup/${deploy_dir}/${timestamp}/" />
+                        <echo>Creating empty project dir.</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ${deploy_dir}" />
+                        <echo>Creating the releases dir.</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ${deploy_dir}/releases" />
+                    </then>
+                </if>
+
+                <echo>Check that a directory exists for the repo.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/releases/repo" property="deploy_git_dir" display="false" />
+                <if>
+                    <equals arg1="${deploy_git_dir}" arg2="false" />
+                    <then>
+                        <echo>Making a directory ${deploy_dir}/releases/repo.</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ${deploy_dir}/releases/repo" />
+                    </then>
+                </if>
+
+                <echo>Check if a git repo exists on the staging location.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/releases/repo/.git" property="deploy_git_dir" display="false" />
+                <if>
+                    <equals arg1="${deploy_git_dir}" arg2="false" />
+                    <then>
+                        <!-- No git initilised -->
+                        <echo>No git repo present.</echo>
+                        <property name="deploy_git_clone_command" value="git clone ${repo}${repo_name}.git ${deploy_dir}/releases/repo/." />
+                        <echo>Cloning project into using: ${deploy_git_clone_command}</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_git_clone_command}" />
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/releases/repo/.git" property="deploy_git_dir_check" display="false" />
+                        <if>
+                            <equals arg1="${deploy_git_dir_check}" arg2="false" />
+                            <then>
+                                <fail message="The git repo isn't present in ${deploy_dir}/releases/repo" />
+                            </then>
+                        </if>
+                    </then>
+                    <else>
+                        <echo>Git repo present.</echo>
+                        <echo>Fetch repo info</echo>
+                        <property name="deploy_git_fetch_command" value="git --git-dir=${deploy_dir}/releases/repo/.git fetch origin" />
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_git_fetch_command}" />
+                        <property name="deploy_git_pull_command" value="${deploy_bin}/pull.sh ${deploy_dir}/releases/repo ${deploy_branch}" />
+                        <echo>Pulling: using ${deploy_git_pull_command}</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_git_pull_command}" />
+                        <echo>Git pull complete</echo>
+                    </else>
+                </if>
+
+                <echo>Checking out deploy branch - ${deploy_branch}.</echo>
+                <property name="deploy_checkout_branch" value="git --git-dir=${deploy_dir}/releases/repo/.git --work-tree=${deploy_dir}/releases/repo checkout ${deploy_branch}" />
+                <echo>${deploy_checkout_branch}</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_checkout_branch}" />
+
+                <echo>Making the timestamped release dir.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ${deploy_dir}/releases/${timestamp}" />
+
+                <echo>Add backup information to log file.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="echo ${timestamp} >> ${deploy_dir}/releases/releases_log" />
+
+                <echo>Archive ${deploy_branch} and then extract to deploy location.</echo>
+
+                <property name="deploy_archive_to_timestamp" value="git --git-dir=${deploy_dir}/releases/repo/.git --work-tree=${deploy_dir}/releases/repo archive ${deploy_branch} | tar -x -C ${deploy_dir}/releases/${timestamp}" />
+                <echo>${deploy_archive_to_timestamp}</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_archive_to_timestamp}" />
+
+                <echo>Check if this is a Vanilla site.</echo>
+                <if>
+                    <equals arg1="${is_vanilla}" arg2="yes" />
+                    <then>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/releases/${timestamp}/cache" property="deploy_vanilla_cache_exists" display="false" />
+                        <if>
+                            <equals arg1="${deploy_vanilla_cache_exists}" arg2="false" />
+                            <then>
+                                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mkdir ${deploy_dir}/releases/${timestamp}/cache" />
+                            </then>
+                        </if>
+                        <echo message="Giving 0777 to the cache dir" />
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="chmod -R 0777 ${deploy_dir}/releases/${timestamp}/cache" />
+                    </then>
+                </if>
+
+                <echo>Checking for the shared assets script.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_file_exists.sh ${deploy_dir}/shared/shared.sh" property="shared_script_stage" display="false" />
+                <if>
+                    <equals arg1="${shared_script_stage}" arg2="true" />
+                    <then>
+                        <property name="deploy_shared_script" value="${deploy_dir}/shared/./shared.sh ${deploy_dir} ${timestamp}" />
+                        <echo>Running the shared assets script: ${deploy_shared_script}</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_shared_script}" />
+                    </then>
+                    <else>
+                        <echo>Please add a shared.sh file if required for assets not kept in git.</echo>
+                    </else>
+                </if>
+
+                <echo message="Check if a database should be installed" />
+                <if>
+                    <equals arg1="${db_deploy}" arg2="yes" />
+                    <then>
+                        <!-- check if a database dump exists -->
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_file_exists.sh ${deploy_dir}/documents/database/database.sql" property="db_dump_exists" display="false" />
+                        <if>
+                            <equals arg1="${db_dump_exists}" arg2="true" />
+                            <then>
+                                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mysql --user=${db_user_deploy} --password=${db_pass_deploy} --host=localhost -e 'DROP database `${db_deploy}`'" />
+                                <echo>MySQL drop command: mysql --user=${db_user_deploy} --password=${db_pass_deploy} --host=localhost -e 'DROP database `${db_deploy}`'</echo>
+                                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mysql --user=${db_user_deploy} --password=${db_pass_deploy} --host=localhost -e 'CREATE database `${db_deploy}`'" />
+                                <echo>MySQL create command: mysql --user=${db_user_deploy} --password=${db_pass_deploy} --host=localhost -e 'CREATE database `${db_deploy}`'</echo>
+                                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mysql --user=${db_user_deploy} --password=${db_pass_deploy} --host=localhost ${db_deploy} -e 'SOURCE ${deploy_dir}/documents/database/database.sql'" />
+                                <echo>MySQL install command: mysql --user=${db_user_deploy} --password=${db_pass_deploy} --host=localhost ${db_deploy} -e 'SOURCE ${folder_name}/documents/database/database.sql'</echo>
+                            </then>
+                            <else>
+                                <echo message="No database.sql file exists" />
+                            </else>
+                        </if>
+                    </then>
+                </if>
+
+                <echo>Checking if a current directory already exists.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/current" property="releases_current_location_check" display="false" />
+                <if>
+                    <equals arg1="${releases_current_location_check}" arg2="true" />
+                    <then>
+                        <echo>Unlink the current version.</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="unlink ${deploy_dir}/current;" />
+
+                        <echo>Checking if a current directory is still there i.e. not a symlink.</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_exists.sh ${deploy_dir}/current" property="releases_current_location_check_repeat" display="false" />
+                        <if>
+                            <equals arg1="${releases_current_location_check_repeat}" arg2="true" />
+                            <then>
+                                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="mv ${deploy_dir}/current ~/releases_backup/${deploy_dir}/${timestamp}/" />
+                            </then>
+                        </if>
+
+                    </then>
+                </if>
+
+                <echo>Checking for the clean-up-releases script.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_bin}/./check_file_exists.sh ${deploy_dir}/releases/clean_up_releases.sh" property="shared_script_stage" display="false" />
+                <if>
+                    <equals arg1="${shared_script_stage}" arg2="true" />
+                    <then>
+                        <property name="deploy_clean_up_script" value="${deploy_dir}/releases/./clean_up_releases.sh releases_log" />
+                        <echo>Running the clean-up-releases script: ${deploy_clean_up_script}</echo>
+                        <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="${deploy_clean_up_script}" />
+                    </then>
+                    <else>
+                        <echo>Please add a clean_up_releases.sh file if required to delete older releases versions.</echo>
+                    </else>
+                </if>
+
+                <echo>Linking the current version.</echo>
+                <ssh username="${deploy_user}" password="${deploy_password}" host="${deploy_host}" command="ln -fs ${deploy_dir}/releases/${timestamp} ${deploy_dir}/current" />
+
+                <echo>Deploy complete.</echo>
+
+            </then>
+            <else>
+                <fail message="The site httpdocs do not exist please create the site in the Plesk control panel of the server." />
+            </else>
+        </if>
+    </target>
+</project>
