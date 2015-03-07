@@ -11,19 +11,13 @@
         <echo>Checking the job properties set in the build.xml.</echo>
         <echo>stage_user: ${stage_user}</echo>
         <if>
-            <equals arg1="${foo}" arg2="bar" />
+            <equals arg1="${stage_user}" arg2="bar" />
             <then>
-                <echo message="The value of property foo is bar" />
+                <echo message="The value of property stage_user is ${stage_user}" />
             </then>
             <else>
-                <echo message="The value of property foo is not bar" />
+                <echo message="The value of property stage_user is not set" />
             </else>
-        </if>
-        <if>
-            <isset arg1="${stage_user}" />
-            <then>
-                <fail message="stage_user not assigned within the build.xml." />
-            </then>
         </if>
         <if>
             <equals arg1="${stage_password}" arg2="" />
