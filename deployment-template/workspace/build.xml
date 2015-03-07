@@ -11,7 +11,7 @@
         <echo>Checking the job properties set in the build.xml.</echo>
         <echo>stage_user: ${stage_user}</echo>
         <if>
-            <equals arg1="${stage_user}" arg2="" />
+            <isset arg1="${stage_user}" />
             <then>
                 <fail message="stage_user not assigned within the build.xml." />
             </then>
